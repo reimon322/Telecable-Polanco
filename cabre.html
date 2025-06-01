@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Gestión de Pagos</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f4f4;
+      margin: 0;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: auto;
+      background: #fff;
+      padding: 20px;
+      border-radius: 10px;
+    }
+
+    h1 {
+      text-align: center;
+    }
+
+    form input,
+    form button,
+    .filtros input,
+    .filtros select {
+      padding: 10px;
+      margin: 5px;
+    }
+
+    ul {
+      list-style: none;
+      padding: 0;
+    }
+
+    li {
+      border: 1px solid #ccc;
+      padding: 15px;
+      margin-bottom: 10px;
+      border-radius: 8px;
+    }
+
+    .acciones {
+      margin-top: 10px;
+    }
+
+    .estado-btn,
+    .eliminar-btn,
+    .reporte-btn {
+      margin-right: 10px;
+      padding: 6px 12px;
+      cursor: pointer;
+    }
+
+    .estado.pagado {
+      color: green;
+      font-weight: bold;
+    }
+
+    .estado.nopagado {
+      color: red;
+      font-weight: bold;
+    }
+
+    .meses {
+      display: flex;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    .mes {
+      margin-right: 10px;
+      text-align: center;
+    }
+
+    .ok {
+      color: green;
+    }
+
+    .fail {
+      color: red;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Telecable Polanco</h1>
+
+    <form id="pago-form">
+      <input type="text" id="nombre" placeholder="Nombre" required />
+      <input type="text" id="calle" placeholder="Calle" required />
+      <input type="number" id="monto" placeholder="Monto mensual" required min="0.01" step="0.01" />
+      <button type="submit">Agregar</button>
+    </form>
+
+    <div class="filtros">
+      <input type="text" id="buscar" placeholder="Buscar por nombre..." />
+      <select id="filtro">
+        <option value="todos">Todos</option>
+        <option value="pagado">Pagado</option>
+        <option value="nopagado">No pagado</option>
+      </select>
+    </div>
+
+    <ul id="lista-pagos"></ul>
+  </div>
+
+  <script>
+    const form = document.getElementById('pago-form');
+    const lista = document.getElementById('lista-pagos');
+    const buscarInput = document.getElementById('buscar');
+    const filtroSelect = document.getElementById('filtro');
+
+    let pagos = JSON.parse(localStorage.getItem('pagos')) || [];
+
+    const meses = [
+      "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+      "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+    ];
+
+    function reiniciarPagosMensuales() {
+      const hoy = new Date();
+      const dia = hoy.getDate();
+      const mes = hoy.getMonth();
+      const año = hoy.getFullYear();
+
+      const ultimaActualizacion = JSON.parse(localStorage.getItem('ultimaActualizacion')) || null;
+
+      if (!ultimaActualizacion || ultimaActualizacion.mes !== mes || ultimaActualizacion.año !== año) {
+        if (dia === 1) {
+          pagos.forEach(persona => {
+            persona.pagado = false;
+          });
+          localStorage.setItem('ultimaActualizacion', JSON.stringify({ mes, año }));
+          guardar();
+        }
+      }
+    }
+
+    function guardar() {
+      localStorage.setItem('pagos', JSON.stringify(pagos));
+    }
+
+    function renderizar() {
+      const textoBuscar = buscarInput.value.toLowerCase();
+      const filtro = filtroSelect.value;
+      lista.innerHTML = '';
+
+      pagos.forEach((persona, index) => {
+        const coincideBusqueda = persona.nombre.toLowerCase().includes(textoBuscar);
+        const coincideFiltro =
+          filtro === 'todos' ||
+          (filtro === 'pagado' && persona.pagado) ||
+          (filtro === 'nopagado' && !persona.pagado);
+
+        if (coincideBusqueda && coincideFiltro) {
+          const li = document.createElement('li');
+
+          const historialMes = meses.map((mes, i) => {
+            const año = new Date().getFullYear();
+            const clave = `${año}-${i}`;
+            const pagoMes = persona.historial?.find(h => h.clave === clave);
+            return `<div class="mes">
+              <strong>${mes.slice(0, 3)}</strong><br>
+              ${pagoMes ? `<span class="ok">✅ $${pagoMes.monto}</span>` : `<span class="fail">❌ $0.00</span>`}
+            </div>`;
+          }).join('');
+
+          li.innerHTML = `
+            <div class="info">
+              <strong>${persona.nombre}</strong> - $${persona.monto.toFixed(2)}<br>
+              Calle: ${persona.calle}<br>
+              Estado actual: <span class="estado ${persona.pagado ? 'pagado' : 'nopagado'}">
+                ${persona.pagado ? 'Pagado ✅' : 'No pagado ❌'}
+              </span>
+            </div>
+            <div class="acciones">
+              <button class="estado-btn" onclick="toggleEstado(${index})">
+                ${persona.pagado ? 'Marcar no pagado' : 'Marcar pagado'}
+              </button>
+              <button class="eliminar-btn" onclick="eliminar(${index})">Eliminar</button>
+              <button class="reporte-btn" onclick="verReporte(${index})">Ver reporte</button>
+            </div>
+            <div class="meses">${historialMes}</div>
+          `;
+          lista.appendChild(li);
+        }
+      });
+    }
+
+    function toggleEstado(index) {
+      const persona = pagos[index];
+      persona.pagado = !persona.pagado;
+
+      const fecha = new Date();
+      const año = fecha.getFullYear();
+      const mes = fecha.getMonth();
+      const clave = `${año}-${mes}`;
+
+      if (!persona.historial) persona.historial = [];
+
+      if (persona.pagado) {
+        const yaExiste = persona.historial.find(h => h.clave === clave);
+        if (!yaExiste) {
+          persona.historial.push({
+            clave,
+            fecha: fecha.toLocaleDateString(),
+            hora: fecha.toLocaleTimeString(),
+            monto: persona.monto
+          });
+        }
+      } else {
+        persona.historial = persona.historial.filter(h => h.clave !== clave);
+      }
+
+      guardar();
+      renderizar();
+    }
+
+    function eliminar(index) {
+      const confirmar = confirm("¿Estás seguro de que deseas eliminar esta persona?");
+      if (confirmar) {
+        pagos.splice(index, 1);
+        guardar();
+        renderizar();
+      }
+    }
+
+    function verReporte(index) {
+      const persona = pagos[index];
+      const fechaActual = new Date();
+      const fechaHoy = fechaActual.toLocaleDateString();
+      const horaHoy = fechaActual.toLocaleTimeString();
+
+      const año = fechaActual.getFullYear();
+      const mes = fechaActual.getMonth();
+      const claveActual = `${año}-${mes}`;
+      const pagoActual = persona.historial.find(h => h.clave === claveActual);
+
+      const pagoHTML = pagoActual ? `
+        <tr>
+          <td>${pagoActual.fecha}</td>
+          <td>${pagoActual.hora}</td>
+          <td>$${pagoActual.monto.toFixed(2)}</td>
+        </tr>
+      ` : `
+        <tr><td colspan="3">No hay pago registrado para este mes</td></tr>
+      `;
+
+      const facturaHTML = `
+        <html>
+          <head>
+            <title>Reporte de ${persona.nombre}</title>
+            <style>
+              body {
+                font-family: Arial, sans-serif;
+                padding: 40px;
+                background: #f9f9f9;
+              }
+              .factura {
+                max-width: 700px;
+                margin: auto;
+                background: white;
+                padding: 30px;
+                border-radius: 10px;
+                box-shadow: 0 0 10px rgba(0,0,0,0.1);
+              }
+              h2 {
+                text-align: center;
+                margin-bottom: 5px;
+              }
+              .subtitulo {
+                text-align: center;
+                font-weight: normal;
+                font-size: 1.2em;
+                margin-bottom: 20px;
+                color: #555;
+              }
+              .datos {
+                margin-bottom: 20px;
+              }
+              .datos strong {
+                display: inline-block;
+                width: 120px;
+              }
+              table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 20px;
+              }
+              table, th, td {
+                border: 1px solid #ddd;
+              }
+              th, td {
+                padding: 12px;
+                text-align: left;
+              }
+              th {
+                background: #f0f0f0;
+              }
+              #imprimir-btn {
+                display: block;
+                margin: 20px auto 0 auto;
+                padding: 10px 20px;
+                font-size: 16px;
+                cursor: pointer;
+                background-color: #007bff;
+                color: white;
+                border: none;
+                border-radius: 5px;
+              }
+              #imprimir-btn:hover {
+                background-color: #0056b3;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="factura">
+              <h2>Reporte de Pago Mensual</h2>
+              <div class="subtitulo">
+                Telecable Polanco<br/>
+              </div>
+              <div class="datos">
+                <p><strong>Nombre:</strong> ${persona.nombre}</p>
+                <p><strong>Calle:</strong> ${persona.calle}</p>
+                <p><strong>Monto mensual:</strong> $${persona.monto.toFixed(2)}</p>
+                <p><strong>Fecha del reporte:</strong> ${fechaHoy}</p>
+                <p><strong>Hora del reporte:</strong> ${horaHoy}</p>
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Hora</th>
+                    <th>Monto pagado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${pagoHTML}
+                </tbody>
+              </table>
+              <button id="imprimir-btn" onclick="window.print()">Telecable Polanco
+</button>
+            </div>
+          </body>
+        </html>
+      `;
+
+      const ventana = window.open('', '_blank');
+      ventana.document.write(facturaHTML);
+      ventana.document.close();
+    }
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+
+      const nombre = document.getElementById('nombre').value.trim();
+      const calle = document.getElementById('calle').value.trim();
+      const monto = parseFloat(document.getElementById('monto').value);
+
+      if (nombre && calle && monto > 0) {
+        pagos.push({
+          nombre,
+          calle,
+          monto,
+          pagado: false,
+          historial: []
+        });
+        guardar();
+        renderizar();
+        form.reset();
+      } else {
+        alert("Por favor ingresa datos válidos.");
+      }
+    });
+
+    buscarInput.addEventListener('input', renderizar);
+    filtroSelect.addEventListener('change', renderizar);
+
+    reiniciarPagosMensuales();
+    renderizar();
+  </script>
+</body>
+</html>
+
